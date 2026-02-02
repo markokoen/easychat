@@ -270,12 +270,21 @@ func (h *Handler) sendError(client *Client, message string, requestID string) {
 }
 
 func (h *Handler) extractClaims(r *http.Request) (appauth.Claims, bool) {
+	token := ""
 	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
-	parts := strings.SplitN(authorization, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+	if authorization != "" {
+		parts := strings.SplitN(authorization, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") && strings.TrimSpace(parts[1]) != "" {
+			token = strings.TrimSpace(parts[1])
+		}
+	}
+	if token == "" {
+		token = strings.TrimSpace(r.URL.Query().Get("token"))
+	}
+	if token == "" {
 		return appauth.Claims{}, false
 	}
-	claims, err := h.authService.ParseToken(r.Context(), strings.TrimSpace(parts[1]))
+	claims, err := h.authService.ParseToken(r.Context(), token)
 	if err != nil {
 		return appauth.Claims{}, false
 	}

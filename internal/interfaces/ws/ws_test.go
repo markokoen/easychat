@@ -348,6 +348,12 @@ func TestHandlerHelpers(t *testing.T) {
 		t.Fatalf("expected valid claims, got %+v", claims)
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/ws/chatrooms/r1?token=u2", nil)
+	claims, ok = h.extractClaims(req)
+	if !ok || claims.UserID != "u2" {
+		t.Fatalf("expected valid claims from query token, got %+v", claims)
+	}
+
 	client := &Client{chatRoomID: "r1", user: appauth.Claims{UserID: "u1"}, conn: &fakeConn{}, send: make(chan []byte, 4)}
 	h.sendError(client, "boom", "req-1")
 	envelopes := drainEnvelopes(client.send)
