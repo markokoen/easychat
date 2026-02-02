@@ -5,13 +5,19 @@ EasyChat is a WebSocket-first chat service in Go using Clean Architecture (Ports
 [![Go](https://img.shields.io/badge/go-1.25.6-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Coverage](https://img.shields.io/badge/coverage-93.4%25-brightgreen)](internal)
 
-## Test Coverage
+## API Docs (Swagger UI)
 
-`go test ./... -coverprofile=coverage.out` → **93.4% statements covered**
+[![Swagger UI](https://img.shields.io/badge/Swagger%20UI-Open%20Docs-85EA2D?logo=swagger&logoColor=black)](http://localhost:8080/swagger/index.html)
+
+`http://localhost:8080/swagger/index.html`
 
 ## Architecture
 
 ![EasyChat Architecture Diagram](docs/assets/easychat-architecture.svg)
+
+## Test Coverage
+
+`go test ./... -coverprofile=coverage.out` → **93.4% statements covered**
 
 ## Features
 
