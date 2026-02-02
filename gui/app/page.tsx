@@ -143,7 +143,7 @@ export default function Page() {
   const [userNamesInput, setUserNamesInput] = useState("Alex, Sam, Priya");
   const [chatRoomId, setChatRoomId] = useState("");
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagesByUser, setMessagesByUser] = useState<Record<string, ChatMessage[]>>({});
   const [events, setEvents] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -156,6 +156,10 @@ export default function Page() {
   const closeAllSockets = () => {
     socketsRef.current.forEach((socket) => {
       try {
+        socket.onopen = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.onmessage = null;
         socket.close();
       } catch {
         // ignore close errors
@@ -173,20 +177,29 @@ export default function Page() {
     setParticipants((prev) => prev.map((participant) => (participant.userId === userId ? updater(participant) : participant)));
   };
 
-  const addOrUpdateMessage = (incoming: ChatMessage) => {
-    setMessages((prev) => {
-      const index = prev.findIndex((message) => message.id === incoming.id);
+  const addOrUpdateMessage = (userId: string, incoming: ChatMessage) => {
+    setMessagesByUser((prev) => {
+      const current = prev[userId] ?? [];
+      const index = current.findIndex((message) => message.id === incoming.id);
+      let nextMessages: ChatMessage[];
       if (index === -1) {
-        return [...prev, incoming].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        nextMessages = [...current, incoming].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      } else {
+        nextMessages = [...current];
+        nextMessages[index] = mergeMessage(nextMessages[index], incoming);
       }
-      const next = [...prev];
-      next[index] = mergeMessage(next[index], incoming);
-      return next;
+      return { ...prev, [userId]: nextMessages };
     });
   };
 
-  const updateMessageReceipts = (messageId: string, updater: (message: ChatMessage) => ChatMessage) => {
-    setMessages((prev) => prev.map((message) => (message.id === messageId ? updater(message) : message)));
+  const updateMessageReceipts = (userId: string, messageId: string, updater: (message: ChatMessage) => ChatMessage) => {
+    setMessagesByUser((prev) => {
+      const current = prev[userId] ?? [];
+      return {
+        ...prev,
+        [userId]: current.map((message) => (message.id === messageId ? updater(message) : message)),
+      };
+    });
   };
 
   const handleEnvelope = (participant: Participant, envelope: Envelope) => {
@@ -196,7 +209,7 @@ export default function Page() {
         if (!incoming?.id) {
           return;
         }
-        addOrUpdateMessage({
+        addOrUpdateMessage(participant.userId, {
           ...incoming,
           deliveryReceipts: incoming.deliveryReceipts ?? [],
           readReceipts: incoming.readReceipts ?? [],
@@ -211,7 +224,7 @@ export default function Page() {
           return;
         }
         const { messageId, receipt } = envelope.payload;
-        updateMessageReceipts(messageId, (message) => ({
+        updateMessageReceipts(participant.userId, messageId, (message) => ({
           ...message,
           deliveryReceipts: upsertDeliveryReceipts(message.deliveryReceipts, receipt),
         }));
@@ -223,7 +236,7 @@ export default function Page() {
           return;
         }
         const { messageId, receipt } = envelope.payload;
-        updateMessageReceipts(messageId, (message) => ({
+        updateMessageReceipts(participant.userId, messageId, (message) => ({
           ...message,
           readReceipts: upsertReadReceipts(message.readReceipts, receipt),
         }));
@@ -254,22 +267,34 @@ export default function Page() {
     socketsRef.current.set(participant.userId, socket);
 
     socket.onopen = () => {
+      if (socketsRef.current.get(participant.userId) !== socket) {
+        return;
+      }
       applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "connected" }));
       pushEvent(`${participant.displayName} connected.`);
     };
 
     socket.onclose = () => {
+      if (socketsRef.current.get(participant.userId) !== socket) {
+        return;
+      }
       applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "disconnected" }));
       pushEvent(`${participant.displayName} disconnected.`);
       socketsRef.current.delete(participant.userId);
     };
 
     socket.onerror = () => {
+      if (socketsRef.current.get(participant.userId) !== socket) {
+        return;
+      }
       applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "error" }));
       pushEvent(`${participant.displayName} connection error.`);
     };
 
     socket.onmessage = (event) => {
+      if (socketsRef.current.get(participant.userId) !== socket) {
+        return;
+      }
       try {
         const envelope = JSON.parse(event.data) as Envelope;
         handleEnvelope(participant, envelope);
@@ -287,14 +312,21 @@ export default function Page() {
       return;
     }
 
+    socketsRef.current.delete(participant.userId);
+    socket.onopen = null;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.onmessage = null;
+
     if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
-      socketsRef.current.delete(participant.userId);
       applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "disconnected" }));
       pushEvent(`${participant.displayName} is already disconnecting.`);
       return;
     }
 
     socket.close(1000, "manual disconnect");
+    applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "disconnected" }));
+    pushEvent(`${participant.displayName} manually disconnected.`);
   };
 
   const connectParticipant = (participant: Participant) => {
@@ -338,7 +370,7 @@ export default function Page() {
     setIsBusy(true);
     setErrorMessage("");
     setChatRoomId("");
-    setMessages([]);
+    setMessagesByUser({});
     setEvents([]);
     closeAllSockets();
 
@@ -390,6 +422,7 @@ export default function Page() {
       }));
 
       setParticipants(nextParticipants);
+      setMessagesByUser(Object.fromEntries(nextParticipants.map((participant) => [participant.userId, []])));
       nextParticipants.forEach((participant) => connectParticipantSocket(participant, room.id));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected setup error";
@@ -423,7 +456,8 @@ export default function Page() {
       return;
     }
 
-    const unreadMessages = messages.filter(
+    const participantMessages = messagesByUser[participant.userId] ?? [];
+    const unreadMessages = participantMessages.filter(
       (message) =>
         message.senderUserId !== participant.userId && !message.readReceipts.some((receipt) => receipt.userId === participant.userId),
     );
@@ -439,7 +473,7 @@ export default function Page() {
       socket.send(JSON.stringify({ type: "message.read", requestId, payload: { messageId: message.id } }));
 
       // Optimistic UI so read metadata appears immediately after click.
-      updateMessageReceipts(message.id, (current) => ({
+      updateMessageReceipts(participant.userId, message.id, (current) => ({
         ...current,
         readReceipts: upsertReadReceipts(current.readReceipts, {
           userId: participant.userId,
@@ -453,7 +487,7 @@ export default function Page() {
   };
 
   const unreadCount = (participant: Participant) =>
-    messages.filter(
+    (messagesByUser[participant.userId] ?? []).filter(
       (message) =>
         message.senderUserId !== participant.userId && !message.readReceipts.some((receipt) => receipt.userId === participant.userId),
     ).length;
@@ -514,6 +548,7 @@ export default function Page() {
 
           {participants.map((participant) => {
             const unread = unreadCount(participant);
+            const participantMessages = messagesByUser[participant.userId] ?? [];
 
             return (
               <div key={participant.userId} className="participantTile">
@@ -536,9 +571,9 @@ export default function Page() {
                 </div>
 
                 <div className="inbox" onClick={() => markUnreadAsRead(participant)}>
-                  {messages.length === 0 ? <p className="muted">No messages yet.</p> : null}
+                  {participantMessages.length === 0 ? <p className="muted">No messages yet.</p> : null}
 
-                  {messages.map((message) => {
+                  {participantMessages.map((message) => {
                     const mine = message.senderUserId === participant.userId;
                     const recipientCount = Math.max(participants.length - 1, 1);
                     const deliveredRecipients = message.deliveryReceipts.filter(
