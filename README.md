@@ -19,6 +19,10 @@ make run
 open http://localhost:8080/swagger/index.html
 ```
 
+### EasyChat Flow Demo
+
+![EasyChat GUI Demo](docs/assets/easychat-demo.gif)
+
 ## API Docs (Swagger UI)
 
 [![Swagger UI](https://img.shields.io/badge/Swagger%20UI-Open%20Docs-85EA2D?logo=swagger&logoColor=black)](http://localhost:8080/swagger/index.html)
@@ -198,5 +202,3 @@ npm run dev
 ```
 
 Then open `http://localhost:3000`.
-
-![EasyChat GUI Demo](docs/assets/easychat-demo.gif)
