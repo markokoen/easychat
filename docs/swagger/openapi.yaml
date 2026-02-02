@@ -1,0 +1,279 @@
+openapi: 3.0.3
+info:
+  title: EasyChat API
+  version: 1.0.0
+  description: |
+    EasyChat REST + WebSocket API.
+
+    REST is used for authentication and chatroom management.
+    WebSocket handles messages, receipts, and presence events.
+servers:
+  - url: /
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    UserSummary:
+      type: object
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+    User:
+      type: object
+      required: [id, displayName, createdAt]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+    ChatRoom:
+      type: object
+      required: [id, reference, users, createdAt]
+      properties:
+        id:
+          type: string
+        reference:
+          type: string
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        createdAt:
+          type: string
+          format: date-time
+    DeliveryReceipt:
+      type: object
+      required: [userId, userName, status, sentAt]
+      properties:
+        userId:
+          type: string
+        userName:
+          type: string
+        status:
+          type: string
+          enum: [SENT, DELIVERED]
+        sentAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+    ReadReceipt:
+      type: object
+      required: [userId, userName, readAt]
+      properties:
+        userId:
+          type: string
+        userName:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+    Message:
+      type: object
+      required: [id, chatRoomId, senderUserId, senderUserName, content, createdAt, deliveryReceipts, readReceipts]
+      properties:
+        id:
+          type: string
+        chatRoomId:
+          type: string
+        senderUserId:
+          type: string
+        senderUserName:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        deliveryReceipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryReceipt'
+        readReceipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadReceipt'
+paths:
+  /api/v1/auth/login:
+    post:
+      summary: Login and receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                userId:
+                  type: string
+                displayName:
+                  type: string
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, user]
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/chatrooms:
+    post:
+      summary: Create a chatroom
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reference, users]
+              properties:
+                reference:
+                  type: string
+                users:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UserSummary'
+      responses:
+        '201':
+          description: Chatroom created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatRoom'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/chatrooms/{chatRoomId}:
+    get:
+      summary: Get chatroom by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: chatRoomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chatroom found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatRoom'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/chatrooms/reference/{reference}:
+    get:
+      summary: Get chatroom by external reference
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chatroom found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatRoom'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /ws/chatrooms/{chatRoomId}:
+    get:
+      summary: WebSocket connection for chat events (documentation only)
+      description: |
+        Upgrade request with `Authorization: Bearer <token>`.
+
+        Envelope format:
+        ```json
+        {
+          "type": "string",
+          "requestId": "optional",
+          "payload": {}
+        }
+        ```
+
+        Client -> Server events:
+        - `message.send` payload `{ "content": "..." }`
+        - `message.read` payload `{ "messageId": "..." }`
+
+        Server -> Client events:
+        - `message.created`
+        - `message.sent`
+        - `message.delivered`
+        - `message.read`
+        - `user.joined`
+        - `user.left`
+      parameters:
+        - name: chatRoomId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '101':
+          description: Switching protocols
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
