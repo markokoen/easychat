@@ -1,9 +1,27 @@
 # EasyChat
 
+![EasyChat Hero Banner](docs/assets/easychat-hero.svg)
+
 EasyChat is a WebSocket-first chat service in Go using Clean Architecture (Ports & Adapters).
 
 [![Go](https://img.shields.io/badge/go-1.25.6-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Build](https://github.com/markokoen/easychat/actions/workflows/ci.yml/badge.svg)](https://github.com/markokoen/easychat/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-93.4%25-brightgreen)](internal)
+[![Go Report Card](https://goreportcard.com/badge/github.com/markokoen/easychat)](https://goreportcard.com/report/github.com/markokoen/easychat)
+[![License](https://img.shields.io/github/license/markokoen/easychat)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/markokoen/easychat?display_name=tag)](https://github.com/markokoen/easychat/releases)
+
+## Quick Start (60 sec)
+
+```bash
+export JWT_SECRET=dev-secret
+make run
+open http://localhost:8080/swagger/index.html
+```
+
+## Demo
+
+![EasyChat Demo GIF](docs/assets/easychat-demo.gif)
 
 ## API Docs (Swagger UI)
 
@@ -43,7 +61,11 @@ internal/
   infrastructure/nats
   platform/config
   platform/logger
-docs/swagger
+  platform/server
+docs/
+  swagger
+  postman
+  assets
 ```
 
 ## Environment Variables
@@ -54,21 +76,12 @@ docs/swagger
 - `AUTH_PROVIDER_TYPE` (default: `jwt`)
 - `JWT_SECRET` (required)
 
-## Run
+## Postman
 
-```bash
-JWT_SECRET=dev-secret make run
-```
+- REST collection: `docs/postman/easychat.postman_collection.json`
+- WebSocket guide: `docs/postman/WEBSOCKET_SETUP.md`
 
-or:
-
-```bash
-./scripts/run-local.sh
-```
-
-Then open `http://localhost:8080/swagger/index.html`.
-
-## API
+## API Summary
 
 REST:
 
@@ -96,4 +109,80 @@ Errors always use:
 
 ```json
 { "message": "human readable error" }
+```
+
+## REST API Examples
+
+`POST /api/v1/auth/login`
+
+```json
+{
+  "userId": "u-123",
+  "displayName": "Marko",
+  "metadata": { "source": "web" }
+}
+```
+
+```json
+{
+  "token": "<jwt>",
+  "user": {
+    "id": "u-123",
+    "displayName": "Marko",
+    "metadata": { "source": "web" },
+    "createdAt": "2026-02-02T12:00:00Z"
+  }
+}
+```
+
+`POST /api/v1/chatrooms`
+
+```json
+{
+  "reference": "order-1001",
+  "users": [
+    { "id": "u-123", "displayName": "Marko" },
+    { "id": "u-456", "displayName": "Alex" }
+  ]
+}
+```
+
+```json
+{
+  "id": "cr-123",
+  "reference": "order-1001",
+  "users": [
+    { "id": "u-123", "displayName": "Marko" },
+    { "id": "u-456", "displayName": "Alex" }
+  ],
+  "createdAt": "2026-02-02T12:01:00Z"
+}
+```
+
+`GET /api/v1/chatrooms/{chatRoomId}`
+
+```json
+{
+  "id": "cr-123",
+  "reference": "order-1001",
+  "users": [
+    { "id": "u-123", "displayName": "Marko" },
+    { "id": "u-456", "displayName": "Alex" }
+  ],
+  "createdAt": "2026-02-02T12:01:00Z"
+}
+```
+
+`GET /api/v1/chatrooms/reference/{reference}`
+
+```json
+{
+  "id": "cr-123",
+  "reference": "order-1001",
+  "users": [
+    { "id": "u-123", "displayName": "Marko" },
+    { "id": "u-456", "displayName": "Alex" }
+  ],
+  "createdAt": "2026-02-02T12:01:00Z"
+}
 ```
