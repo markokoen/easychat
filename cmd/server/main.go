@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"easychat/internal/platform/server"
+	"github.com/markokoen/easychat/internal/platform/server"
 )
 
 var runServer = server.Run

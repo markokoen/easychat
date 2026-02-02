@@ -3,7 +3,7 @@ package http
 import (
 	"context"
 
-	appauth "easychat/internal/app/auth"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
 )
 
 type ctxKey string

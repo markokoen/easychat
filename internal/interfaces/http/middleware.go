@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	appauth "easychat/internal/app/auth"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
 
 	"github.com/gorilla/mux"
 )

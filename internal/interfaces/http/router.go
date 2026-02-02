@@ -3,8 +3,8 @@ package http
 import (
 	"net/http"
 
-	appauth "easychat/internal/app/auth"
-	"easychat/internal/interfaces/ws"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
+	"github.com/markokoen/easychat/internal/interfaces/ws"
 
 	"github.com/gorilla/mux"
 )

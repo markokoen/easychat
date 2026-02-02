@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"easychat/internal/domain/chat"
+	"github.com/markokoen/easychat/internal/domain/chat"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"

@@ -1,4 +1,4 @@
-module easychat
+module github.com/markokoen/easychat
 
 go 1.25.6
 

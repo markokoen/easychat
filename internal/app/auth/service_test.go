@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"easychat/internal/domain/chat"
+	"github.com/markokoen/easychat/internal/domain/chat"
 )
 
 type fakeUserRepo struct {

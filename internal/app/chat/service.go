@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	authapp "easychat/internal/app/auth"
-	domain "easychat/internal/domain/chat"
-	"easychat/internal/platform/id"
+	authapp "github.com/markokoen/easychat/internal/app/auth"
+	domain "github.com/markokoen/easychat/internal/domain/chat"
+	"github.com/markokoen/easychat/internal/platform/id"
 )
 
 var (

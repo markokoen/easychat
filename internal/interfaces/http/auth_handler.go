@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	appauth "easychat/internal/app/auth"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
 )
 
 type AuthHandler struct {

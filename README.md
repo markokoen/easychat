@@ -9,7 +9,7 @@ EasyChat is a WebSocket-first chat service in Go using Clean Architecture (Ports
 [![Coverage](https://img.shields.io/badge/coverage-93.4%25-brightgreen)](internal)
 [![Go Report Card](https://goreportcard.com/badge/github.com/markokoen/easychat)](https://goreportcard.com/report/github.com/markokoen/easychat)
 [![License](https://img.shields.io/github/license/markokoen/easychat)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/markokoen/easychat?display_name=tag)](https://github.com/markokoen/easychat/releases)
+[![Version](https://img.shields.io/github/v/tag/markokoen/easychat?sort=semver)](https://github.com/markokoen/easychat/tags)
 
 ## Quick Start (60 sec)
 

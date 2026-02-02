@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"easychat/internal/platform/config"
+	"github.com/markokoen/easychat/internal/platform/config"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"

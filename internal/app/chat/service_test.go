@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	appauth "easychat/internal/app/auth"
-	domain "easychat/internal/domain/chat"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
+	domain "github.com/markokoen/easychat/internal/domain/chat"
 )
 
 type fakeUserRepo struct {

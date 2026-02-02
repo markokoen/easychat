@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"easychat/internal/domain/chat"
-	"easychat/internal/platform/id"
+	"github.com/markokoen/easychat/internal/domain/chat"
+	"github.com/markokoen/easychat/internal/platform/id"
 )
 
 var ErrInvalidCredentials = errors.New("invalid credentials")

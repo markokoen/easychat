@@ -11,10 +11,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	appauth "easychat/internal/app/auth"
-	appchat "easychat/internal/app/chat"
-	domain "easychat/internal/domain/chat"
-	wsiface "easychat/internal/interfaces/ws"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
+	appchat "github.com/markokoen/easychat/internal/app/chat"
+	domain "github.com/markokoen/easychat/internal/domain/chat"
+	wsiface "github.com/markokoen/easychat/internal/interfaces/ws"
 
 	"github.com/gorilla/mux"
 )

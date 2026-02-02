@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	appauth "easychat/internal/app/auth"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
 
 	"github.com/golang-jwt/jwt/v5"
 )

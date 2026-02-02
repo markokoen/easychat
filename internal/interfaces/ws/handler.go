@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	appauth "easychat/internal/app/auth"
-	appchat "easychat/internal/app/chat"
-	domain "easychat/internal/domain/chat"
+	appauth "github.com/markokoen/easychat/internal/app/auth"
+	appchat "github.com/markokoen/easychat/internal/app/chat"
+	domain "github.com/markokoen/easychat/internal/domain/chat"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
