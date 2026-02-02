@@ -93,6 +93,8 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		_ = h.manager.Unregister(replaced)
 	}
 
+	h.sendChatHistory(r.Context(), client)
+
 	h.manager.Broadcast(chatRoomID, Envelope{
 		Type: "user.joined",
 		Payload: map[string]any{
@@ -105,6 +107,24 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	go h.writePump(client)
 	h.readPump(client)
+}
+
+func (h *Handler) sendChatHistory(ctx context.Context, client *Client) {
+	messages, err := h.chatService.ListChatRoomMessages(ctx, client.chatRoomID, client.user)
+	if err != nil {
+		h.log.Warn("failed to load chat history", "error", err, "chatRoomId", client.chatRoomID, "userId", client.user.UserID)
+		h.sendError(client, "failed to load chat history", "")
+		return
+	}
+
+	for _, message := range messages {
+		if ok := h.manager.Enqueue(client, Envelope{
+			Type:    "message.created",
+			Payload: message,
+		}); !ok {
+			return
+		}
+	}
 }
 
 func (h *Handler) readPump(client *Client) {

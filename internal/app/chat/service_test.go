@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +118,9 @@ type fakeMessageRepo struct {
 	messages            map[string]domain.Message
 	createErr           error
 	getByIDErr          map[string]error
+	listErr             error
+	lastListChatRoomID  string
+	lastListLimit       int64
 	upsertDeliveryError error
 	upsertReadError     error
 }
@@ -140,7 +144,12 @@ func (f *fakeMessageRepo) GetByID(_ context.Context, id string) (*domain.Message
 	return &message, nil
 }
 
-func (f *fakeMessageRepo) ListByChatRoom(_ context.Context, chatRoomID string, _ int64) ([]domain.Message, error) {
+func (f *fakeMessageRepo) ListByChatRoom(_ context.Context, chatRoomID string, limit int64) ([]domain.Message, error) {
+	f.lastListChatRoomID = chatRoomID
+	f.lastListLimit = limit
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	var out []domain.Message
 	for _, message := range f.messages {
 		if message.ChatRoomID == chatRoomID {
@@ -344,6 +353,43 @@ func TestLeaveChatRoom(t *testing.T) {
 
 	if err := svc.LeaveChatRoom(context.Background(), "room-1", "u1"); err != nil {
 		t.Fatalf("expected success, got %v", err)
+	}
+}
+
+func TestListChatRoomMessages(t *testing.T) {
+	svc, _, chatRooms, messages := newServiceForTest()
+	chatRooms.rooms["room-1"] = domain.ChatRoom{
+		ID: "room-1",
+		Users: []domain.UserSummary{
+			{ID: "u1", DisplayName: "U1"},
+			{ID: "u2", DisplayName: "U2"},
+		},
+	}
+	messages.messages["m1"] = domain.Message{ID: "m1", ChatRoomID: "room-1", Content: "hello"}
+
+	if _, err := svc.ListChatRoomMessages(context.Background(), "missing", appauth.Claims{UserID: "u1"}); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+
+	if _, err := svc.ListChatRoomMessages(context.Background(), "room-1", appauth.Claims{UserID: "u3"}); !errors.Is(err, ErrNotRoomMember) {
+		t.Fatalf("expected membership error, got %v", err)
+	}
+
+	messages.listErr = errors.New("list failed")
+	if _, err := svc.ListChatRoomMessages(context.Background(), "room-1", appauth.Claims{UserID: "u1"}); err == nil || err.Error() != "list failed" {
+		t.Fatalf("expected list error, got %v", err)
+	}
+	messages.listErr = nil
+
+	out, err := svc.ListChatRoomMessages(context.Background(), "room-1", appauth.Claims{UserID: "u2"})
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(out) != 1 || out[0].ID != "m1" {
+		t.Fatalf("unexpected message list: %+v", out)
+	}
+	if messages.lastListChatRoomID != "room-1" || messages.lastListLimit != math.MaxInt64 {
+		t.Fatalf("expected list call for full room history, got chatRoomID=%q limit=%d", messages.lastListChatRoomID, messages.lastListLimit)
 	}
 }
 

@@ -125,6 +125,7 @@ func (f *fakeChatRoomRepo) RemoveUser(_ context.Context, chatRoomID string, user
 type fakeMessageRepo struct {
 	messages            map[string]domain.Message
 	getErrByID          map[string]error
+	listErr             error
 	upsertDeliveryError error
 	upsertReadError     error
 }
@@ -146,6 +147,9 @@ func (f *fakeMessageRepo) GetByID(_ context.Context, id string) (*domain.Message
 }
 
 func (f *fakeMessageRepo) ListByChatRoom(_ context.Context, chatRoomID string, _ int64) ([]domain.Message, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	out := make([]domain.Message, 0)
 	for _, message := range f.messages {
 		if message.ChatRoomID == chatRoomID {
@@ -431,6 +435,56 @@ func TestHandleMessageSendAndRead(t *testing.T) {
 	errEvents = drainEnvelopes(sender.send)
 	if len(errEvents) == 0 || errEvents[0].Type != "error" {
 		t.Fatalf("expected mark read failure")
+	}
+}
+
+func TestSendChatHistory(t *testing.T) {
+	authService, chatService, chatRepo, messageRepo := newServicesForWSTest()
+	chatRepo.rooms["room-1"] = domain.ChatRoom{
+		ID: "room-1",
+		Users: []domain.UserSummary{
+			{ID: "u1", DisplayName: "U1"},
+			{ID: "u2", DisplayName: "U2"},
+		},
+	}
+	messageRepo.messages["m1"] = domain.Message{ID: "m1", ChatRoomID: "room-1", SenderUserID: "u2", SenderUserName: "U2", Content: "first", CreatedAt: time.Now().UTC()}
+	messageRepo.messages["m2"] = domain.Message{ID: "m2", ChatRoomID: "room-1", SenderUserID: "u2", SenderUserName: "U2", Content: "second", CreatedAt: time.Now().UTC().Add(time.Second)}
+
+	manager := NewManager(newNoopLogger())
+	h := NewHandler(authService, chatService, manager, newNoopLogger())
+	client, _ := manager.Register("room-1", appauth.Claims{UserID: "u1", DisplayName: "U1"}, &fakeConn{})
+
+	h.sendChatHistory(context.Background(), client)
+
+	envelopes := drainEnvelopes(client.send)
+	if len(envelopes) != 2 {
+		t.Fatalf("expected two history envelopes, got %d", len(envelopes))
+	}
+
+	ids := map[string]bool{}
+	for _, env := range envelopes {
+		if env.Type != "message.created" {
+			t.Fatalf("expected message.created envelope, got %s", env.Type)
+		}
+		payload, ok := env.Payload.(map[string]any)
+		if !ok {
+			t.Fatalf("expected payload map, got %T", env.Payload)
+		}
+		id, ok := payload["id"].(string)
+		if !ok {
+			t.Fatalf("expected payload id, got %+v", payload)
+		}
+		ids[id] = true
+	}
+	if !ids["m1"] || !ids["m2"] {
+		t.Fatalf("expected both history message IDs, got %+v", ids)
+	}
+
+	messageRepo.listErr = errors.New("history failed")
+	h.sendChatHistory(context.Background(), client)
+	errEvents := drainEnvelopes(client.send)
+	if len(errEvents) == 0 || errEvents[0].Type != "error" {
+		t.Fatalf("expected error envelope when history fails")
 	}
 }
 

@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -133,6 +134,26 @@ func (s *Service) LeaveChatRoom(ctx context.Context, chatRoomID string, userID s
 		return ErrInvalidInput
 	}
 	return s.chatRooms.RemoveUser(ctx, chatRoomID, userID)
+}
+
+func (s *Service) ListChatRoomMessages(ctx context.Context, chatRoomID string, claims authapp.Claims) ([]domain.Message, error) {
+	chatRoom, err := s.chatRooms.GetByID(ctx, strings.TrimSpace(chatRoomID))
+	if err != nil {
+		return nil, err
+	}
+
+	isMember := false
+	for _, user := range chatRoom.Users {
+		if user.ID == claims.UserID {
+			isMember = true
+			break
+		}
+	}
+	if !isMember {
+		return nil, ErrNotRoomMember
+	}
+
+	return s.messages.ListByChatRoom(ctx, chatRoom.ID, math.MaxInt64)
 }
 
 type SendMessageInput struct {
