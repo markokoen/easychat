@@ -18,17 +18,45 @@ type ChatRoomResponse = {
   users: UserSummary[];
 };
 
+type DeliveryReceipt = {
+  userId: string;
+  userName: string;
+  status: string;
+  sentAt: string;
+  deliveredAt?: string;
+};
+
+type ReadReceipt = {
+  userId: string;
+  userName: string;
+  readAt: string;
+};
+
 type Envelope = {
   type: string;
   requestId?: string;
-  payload?: any;
+  payload?: unknown;
 };
 
 type ChatMessage = {
   id: string;
+  chatRoomId: string;
+  senderUserId: string;
   senderUserName: string;
   content: string;
   createdAt: string;
+  deliveryReceipts: DeliveryReceipt[];
+  readReceipts: ReadReceipt[];
+};
+
+type DeliveryEventPayload = {
+  messageId: string;
+  receipt: DeliveryReceipt;
+};
+
+type ReadEventPayload = {
+  messageId: string;
+  receipt: ReadReceipt;
 };
 
 type Participant = {
@@ -59,6 +87,57 @@ function formatTime(iso: string): string {
   return Number.isNaN(dt.getTime()) ? "" : dt.toLocaleTimeString();
 }
 
+function isDeliveryPayload(payload: unknown): payload is DeliveryEventPayload {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const candidate = payload as DeliveryEventPayload;
+  return typeof candidate.messageId === "string" && !!candidate.receipt && typeof candidate.receipt.userId === "string";
+}
+
+function isReadPayload(payload: unknown): payload is ReadEventPayload {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const candidate = payload as ReadEventPayload;
+  return typeof candidate.messageId === "string" && !!candidate.receipt && typeof candidate.receipt.userId === "string";
+}
+
+function upsertDeliveryReceipts(receipts: DeliveryReceipt[], receipt: DeliveryReceipt): DeliveryReceipt[] {
+  const index = receipts.findIndex((item) => item.userId === receipt.userId);
+  if (index === -1) {
+    return [...receipts, receipt];
+  }
+  const next = [...receipts];
+  next[index] = receipt;
+  return next;
+}
+
+function upsertReadReceipts(receipts: ReadReceipt[], receipt: ReadReceipt): ReadReceipt[] {
+  const index = receipts.findIndex((item) => item.userId === receipt.userId);
+  if (index === -1) {
+    return [...receipts, receipt];
+  }
+  const next = [...receipts];
+  next[index] = receipt;
+  return next;
+}
+
+function mergeMessage(existing: ChatMessage, incoming: ChatMessage): ChatMessage {
+  let merged = { ...existing, ...incoming };
+  for (const receipt of incoming.deliveryReceipts ?? []) {
+    merged = { ...merged, deliveryReceipts: upsertDeliveryReceipts(merged.deliveryReceipts ?? [], receipt) };
+  }
+  for (const receipt of incoming.readReceipts ?? []) {
+    merged = { ...merged, readReceipts: upsertReadReceipts(merged.readReceipts ?? [], receipt) };
+  }
+  return merged;
+}
+
+function formatReceiptNames<T extends { userName: string }>(items: T[]): string {
+  return items.map((item) => item.userName).filter(Boolean).join(", ");
+}
+
 export default function Page() {
   const [chatRoomReference, setChatRoomReference] = useState("");
   const [userNamesInput, setUserNamesInput] = useState("Alex, Sam, Priya");
@@ -70,7 +149,6 @@ export default function Page() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
-  const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const requestCounterRef = useRef(1);
 
   const userNames = useMemo(() => parseUserNames(userNamesInput), [userNamesInput]);
@@ -91,42 +169,79 @@ export default function Page() {
     setEvents((prev) => [`${now} · ${text}`, ...prev].slice(0, 80));
   };
 
-  const applyParticipantUpdate = (userId: string, updater: (p: Participant) => Participant) => {
+  const applyParticipantUpdate = (userId: string, updater: (participant: Participant) => Participant) => {
     setParticipants((prev) => prev.map((participant) => (participant.userId === userId ? updater(participant) : participant)));
+  };
+
+  const addOrUpdateMessage = (incoming: ChatMessage) => {
+    setMessages((prev) => {
+      const index = prev.findIndex((message) => message.id === incoming.id);
+      if (index === -1) {
+        return [...prev, incoming].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      }
+      const next = [...prev];
+      next[index] = mergeMessage(next[index], incoming);
+      return next;
+    });
+  };
+
+  const updateMessageReceipts = (messageId: string, updater: (message: ChatMessage) => ChatMessage) => {
+    setMessages((prev) => prev.map((message) => (message.id === messageId ? updater(message) : message)));
   };
 
   const handleEnvelope = (participant: Participant, envelope: Envelope) => {
     switch (envelope.type) {
       case "message.created": {
         const incoming = envelope.payload as ChatMessage;
-        if (!incoming?.id || seenMessageIdsRef.current.has(incoming.id)) {
+        if (!incoming?.id) {
           return;
         }
-        seenMessageIdsRef.current.add(incoming.id);
-        setMessages((prev) => [...prev, incoming]);
+        addOrUpdateMessage({
+          ...incoming,
+          deliveryReceipts: incoming.deliveryReceipts ?? [],
+          readReceipts: incoming.readReceipts ?? [],
+        });
         return;
       }
       case "message.sent":
         pushEvent(`${participant.displayName} sent a message.`);
         return;
       case "message.delivered": {
-        const receiptName = envelope.payload?.receipt?.userName ?? "recipient";
-        pushEvent(`Delivered to ${receiptName}.`);
+        if (!isDeliveryPayload(envelope.payload)) {
+          return;
+        }
+        const { messageId, receipt } = envelope.payload;
+        updateMessageReceipts(messageId, (message) => ({
+          ...message,
+          deliveryReceipts: upsertDeliveryReceipts(message.deliveryReceipts, receipt),
+        }));
+        pushEvent(`Delivered to ${receipt.userName || "recipient"}.`);
         return;
       }
       case "message.read": {
-        const receiptName = envelope.payload?.receipt?.userName ?? "user";
-        pushEvent(`Read by ${receiptName}.`);
+        if (!isReadPayload(envelope.payload)) {
+          return;
+        }
+        const { messageId, receipt } = envelope.payload;
+        updateMessageReceipts(messageId, (message) => ({
+          ...message,
+          readReceipts: upsertReadReceipts(message.readReceipts, receipt),
+        }));
+        pushEvent(`Read by ${receipt.userName || "user"}.`);
         return;
       }
       case "user.joined":
-        pushEvent(`${envelope.payload?.userName ?? "User"} joined chat.`);
+        pushEvent(`${(envelope.payload as { userName?: string } | undefined)?.userName ?? "User"} joined chat.`);
         return;
       case "user.left":
-        pushEvent(`${envelope.payload?.userName ?? "User"} left chat.`);
+        pushEvent(`${(envelope.payload as { userName?: string } | undefined)?.userName ?? "User"} left chat.`);
         return;
       case "error":
-        pushEvent(`Socket error for ${participant.displayName}: ${envelope.payload?.message ?? "unknown error"}`);
+        pushEvent(
+          `Socket error for ${participant.displayName}: ${
+            (envelope.payload as { message?: string } | undefined)?.message ?? "unknown error"
+          }`,
+        );
         return;
       default:
         return;
@@ -164,6 +279,54 @@ export default function Page() {
     };
   };
 
+  const disconnectParticipant = (participant: Participant) => {
+    const socket = socketsRef.current.get(participant.userId);
+    if (!socket) {
+      applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "disconnected" }));
+      pushEvent(`${participant.displayName} is already disconnected.`);
+      return;
+    }
+
+    if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
+      socketsRef.current.delete(participant.userId);
+      applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "disconnected" }));
+      pushEvent(`${participant.displayName} is already disconnecting.`);
+      return;
+    }
+
+    socket.close(1000, "manual disconnect");
+  };
+
+  const connectParticipant = (participant: Participant) => {
+    if (!chatRoomId) {
+      setErrorMessage("Create a chatroom before reconnecting users.");
+      return;
+    }
+
+    const existing = socketsRef.current.get(participant.userId);
+    if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+      pushEvent(`${participant.displayName} is already connected.`);
+      return;
+    }
+
+    if (existing && existing.readyState === WebSocket.CLOSING) {
+      pushEvent(`${participant.displayName} is disconnecting, try again in a moment.`);
+      return;
+    }
+
+    socketsRef.current.delete(participant.userId);
+    applyParticipantUpdate(participant.userId, (current) => ({ ...current, status: "connecting" }));
+    connectParticipantSocket(participant, chatRoomId);
+  };
+
+  const toggleParticipantConnection = (participant: Participant) => {
+    if (participant.status === "connected" || participant.status === "connecting") {
+      disconnectParticipant(participant);
+      return;
+    }
+    connectParticipant(participant);
+  };
+
   const createAndConnectRoom = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -177,7 +340,6 @@ export default function Page() {
     setChatRoomId("");
     setMessages([]);
     setEvents([]);
-    seenMessageIdsRef.current.clear();
     closeAllSockets();
 
     try {
@@ -251,15 +413,50 @@ export default function Page() {
     }
 
     const requestId = `${participant.userId}-${requestCounterRef.current++}`;
-    const envelope: Envelope = {
-      type: "message.send",
-      requestId,
-      payload: { content },
-    };
-
-    socket.send(JSON.stringify(envelope));
+    socket.send(JSON.stringify({ type: "message.send", requestId, payload: { content } }));
     applyParticipantUpdate(participant.userId, (current) => ({ ...current, draft: "" }));
   };
+
+  const markUnreadAsRead = (participant: Participant) => {
+    const socket = socketsRef.current.get(participant.userId);
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const unreadMessages = messages.filter(
+      (message) =>
+        message.senderUserId !== participant.userId && !message.readReceipts.some((receipt) => receipt.userId === participant.userId),
+    );
+
+    if (unreadMessages.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    for (const message of unreadMessages) {
+      const requestId = `${participant.userId}-read-${requestCounterRef.current++}`;
+      socket.send(JSON.stringify({ type: "message.read", requestId, payload: { messageId: message.id } }));
+
+      // Optimistic UI so read metadata appears immediately after click.
+      updateMessageReceipts(message.id, (current) => ({
+        ...current,
+        readReceipts: upsertReadReceipts(current.readReceipts, {
+          userId: participant.userId,
+          userName: participant.displayName,
+          readAt: now,
+        }),
+      }));
+    }
+
+    pushEvent(`${participant.displayName} marked ${unreadMessages.length} message(s) as read.`);
+  };
+
+  const unreadCount = (participant: Participant) =>
+    messages.filter(
+      (message) =>
+        message.senderUserId !== participant.userId && !message.readReceipts.some((receipt) => receipt.userId === participant.userId),
+    ).length;
 
   useEffect(() => {
     return () => {
@@ -308,60 +505,100 @@ export default function Page() {
         {errorMessage ? <p className="error">{errorMessage}</p> : null}
       </section>
 
-      <section className="contentGrid">
-        <article className="chatCard">
-          <h2>Conversation</h2>
-          <div className="messageList">
-            {messages.length === 0 ? <p className="muted">No messages yet.</p> : null}
-            {messages.map((message) => (
-              <div key={message.id} className="messageBubble">
-                <div className="messageMeta">
-                  <strong>{message.senderUserName}</strong>
-                  <span>{formatTime(message.createdAt)}</span>
-                </div>
-                <p>{message.content}</p>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="eventCard">
-          <h2>Realtime Events</h2>
-          <div className="eventList">
-            {events.length === 0 ? <p className="muted">Socket events will appear here.</p> : null}
-            {events.map((eventText, index) => (
-              <p key={`${eventText}-${index}`}>{eventText}</p>
-            ))}
-          </div>
-        </article>
-      </section>
-
       <section className="participantsCard">
-        <h2>Connected Users</h2>
+        <h2>Per-User Chat Boxes</h2>
+        <p className="helperText">Click inside a user inbox to mark unread messages as read for that user only.</p>
+
         <div className="participantGrid">
           {participants.length === 0 ? <p className="muted">Create a chatroom to open user sessions.</p> : null}
-          {participants.map((participant) => (
-            <div key={participant.userId} className="participantTile">
-              <div className="participantTop">
-                <strong>{participant.displayName}</strong>
-                <span className={`status ${participant.status}`}>{participant.status}</span>
+
+          {participants.map((participant) => {
+            const unread = unreadCount(participant);
+
+            return (
+              <div key={participant.userId} className="participantTile">
+                <div className="participantTop">
+                  <strong>{participant.displayName}</strong>
+                  <div className="participantMeta">
+                    {unread > 0 ? <span className="badge">{unread} unread</span> : null}
+                    <span className={`status ${participant.status}`}>{participant.status}</span>
+                  </div>
+                </div>
+                <div className="sessionActions">
+                  <button
+                    type="button"
+                    className={participant.status === "connected" || participant.status === "connecting" ? "dangerButton" : "secondaryButton"}
+                    onClick={() => toggleParticipantConnection(participant)}
+                    disabled={!chatRoomId}
+                  >
+                    {participant.status === "connected" || participant.status === "connecting" ? "Disconnect" : "Connect"}
+                  </button>
+                </div>
+
+                <div className="inbox" onClick={() => markUnreadAsRead(participant)}>
+                  {messages.length === 0 ? <p className="muted">No messages yet.</p> : null}
+
+                  {messages.map((message) => {
+                    const mine = message.senderUserId === participant.userId;
+                    const recipientCount = Math.max(participants.length - 1, 1);
+                    const deliveredRecipients = message.deliveryReceipts.filter(
+                      (receipt) => receipt.userId !== message.senderUserId,
+                    );
+                    const readRecipients = message.readReceipts.filter((receipt) => receipt.userId !== message.senderUserId);
+                    const deliveredTotal = deliveredRecipients.length;
+                    const readTotal = readRecipients.length;
+
+                    return (
+                      <div key={`${participant.userId}-${message.id}`} className={`messageItem ${mine ? "mine" : "theirs"}`}>
+                        <div className="messageHead">
+                          <strong>{message.senderUserName}</strong>
+                          <span>{formatTime(message.createdAt)}</span>
+                        </div>
+                        <p>{message.content}</p>
+                        <div className="receiptMeta">
+                          <span>Delivered: {deliveredTotal}/{recipientCount}</span>
+                          <span>Read: {readTotal}/{recipientCount}</span>
+                        </div>
+                        <div className="receiptNames">
+                          {deliveredRecipients.length > 0 ? (
+                            <small>D · {formatReceiptNames(deliveredRecipients)}</small>
+                          ) : null}
+                          {readRecipients.length > 0 ? <small>R · {formatReceiptNames(readRecipients)}</small> : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="composer">
+                  <textarea
+                    value={participant.draft}
+                    onChange={(e) =>
+                      applyParticipantUpdate(participant.userId, (current) => ({ ...current, draft: e.target.value }))
+                    }
+                    rows={3}
+                    placeholder={`Send as ${participant.displayName}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => sendMessage(participant)}
+                    disabled={participant.status !== "connected" || !participant.draft.trim()}
+                  >
+                    Send Message
+                  </button>
+                </div>
               </div>
-              <textarea
-                value={participant.draft}
-                onChange={(e) =>
-                  applyParticipantUpdate(participant.userId, (current) => ({ ...current, draft: e.target.value }))
-                }
-                rows={3}
-                placeholder={`Send as ${participant.displayName}`}
-              />
-              <button
-                type="button"
-                onClick={() => sendMessage(participant)}
-                disabled={participant.status !== "connected" || !participant.draft.trim()}
-              >
-                Send Message
-              </button>
-            </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="eventCard">
+        <h2>Realtime Events</h2>
+        <div className="eventList">
+          {events.length === 0 ? <p className="muted">Socket events will appear here.</p> : null}
+          {events.map((eventText, index) => (
+            <p key={`${eventText}-${index}`}>{eventText}</p>
           ))}
         </div>
       </section>
