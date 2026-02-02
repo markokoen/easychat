@@ -19,10 +19,6 @@ make run
 open http://localhost:8080/swagger/index.html
 ```
 
-## Demo
-
-![EasyChat Demo GIF](docs/assets/easychat-demo.gif)
-
 ## API Docs (Swagger UI)
 
 [![Swagger UI](https://img.shields.io/badge/Swagger%20UI-Open%20Docs-85EA2D?logo=swagger&logoColor=black)](http://localhost:8080/swagger/index.html)
@@ -66,6 +62,9 @@ docs/
   swagger
   postman
   assets
+gui/
+  app
+  README.md
 ```
 
 ## Environment Variables
@@ -186,3 +185,18 @@ Errors always use:
   "createdAt": "2026-02-02T12:01:00Z"
 }
 ```
+
+## GUI (Local Testing, Secondary)
+
+- Link: `gui/README.md`
+- Run locally:
+
+```bash
+cd gui
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000`.
+
+![EasyChat GUI Demo](docs/assets/easychat-demo.gif)
